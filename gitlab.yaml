@@ -1,0 +1,149 @@
+image: maven:3.8.4-openjdk-11  # 使用Maven镜像，适用于Java项目
+
+stages:
+  - lint
+  - build
+  - unit_test
+  - integration_test
+  - code_coverage
+  - performance_test
+  - deploy_test
+  - manual_test
+  - deploy_prod
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+
+# 1. 代码静态分析
+lint:
+  stage: lint
+  script:
+    - mvn checkstyle:check
+  allow_failure: true  # 允许失败，不影响后续阶段
+
+# 2. 编译与构建
+build:
+  stage: build
+  script:
+    - mvn clean package -DskipTests
+  artifacts:
+    paths:
+      - target/*.jar  # 保存构建产物
+
+# 3. 单元测试
+unit_test:
+  stage: unit_test
+  script:
+    - mvn test
+  artifacts:
+    reports:
+      junit: target/surefire-reports/*.xml  # 保存单元测试报告
+
+# 4. 集成测试
+integration_test:
+  stage: integration_test
+  script:
+    - mvn verify -Pintegration-tests
+  artifacts:
+    reports:
+      junit: target/failsafe-reports/*.xml  # 保存集成测试报告
+
+# 5. 代码覆盖率分析
+code_coverage:
+  stage: code_coverage
+  script:
+    - mvn jacoco:report
+  artifacts:
+    paths:
+      - target/site/jacoco/  # 保存代码覆盖率报告
+
+# 6. 性能测试
+performance_test:
+  stage: performance_test
+  script:
+    - apt-get update && apt-get install -y jmeter  # 安装JMeter
+    - jmeter -n -t performance-test.jmx -l result.jtl
+  artifacts:
+    paths:
+      - result.jtl  # 保存性能测试结果
+
+# 7. 部署到测试环境
+deploy_test:
+  stage: deploy_test
+  script:
+    - echo "Deploying to test environment..."
+    - kubectl apply -f k8s/test-deployment.yaml
+  environment:
+    name: test
+    url: https://test.example.com
+  only:
+    - main  # 仅在main分支触发
+
+# 8. 手动测试
+manual_test:
+  stage: manual_test
+  script:
+    - echo "Waiting for manual testing..."
+  when: manual  # 手动触发
+  only:
+    - main
+
+# 9. 部署到生产环境
+deploy_prod:
+  stage: deploy_prod
+  script:
+    - echo "Deploying to production environment..."
+    - kubectl apply -f k8s/prod-deployment.yaml
+  environment:
+    name: production
+    url: https://prod.example.com
+  when: manual  # 手动触发
+  only:
+    - main
+```
+
+### 3. **关键配置说明**
+- **image**：指定运行Pipeline的Docker镜像。这里使用Maven镜像来构建Java项目。
+- **stages**：定义Pipeline的阶段顺序。
+- **variables**：设置环境变量，例如Maven的本地仓库路径。
+- **artifacts**：保存构建产物和测试报告，供后续阶段或下载使用。
+- **environment**：定义部署环境（如测试环境、生产环境）。
+- **only**：指定触发Pipeline的分支或条件。
+- **when: manual**：手动触发作业，通常用于生产环境部署。
+
+### 4. **测试报告与监控**
+- **单元测试与集成测试报告**：使用JUnit格式保存测试报告，GitLab会自动解析并显示在Pipeline页面。
+- **代码覆盖率报告**：使用JaCoCo生成代码覆盖率报告，保存为HTML文件。
+- **性能测试报告**：使用JMeter进行性能测试，保存结果为JTL文件。
+
+### 5. **部署到Kubernetes**
+- 使用`kubectl`命令将应用部署到Kubernetes集群。需要提前配置Kubernetes的访问权限（如kubeconfig文件）。
+
+### 6. **手动测试与生产部署**
+- **manual_test**：在部署到测试环境后，手动触发手动测试阶段。
+- **deploy_prod**：手动触发生产环境部署，确保在测试通过后再发布。
+
+### 7. **通知与反馈**
+- 可以在Pipeline的最后阶段添加通知，例如通过Slack或Email发送测试结果：
+```yaml
+notify:
+  stage: deploy_prod
+  script:
+    - echo "Sending notification..."
+    - curl -X POST -H 'Content-type: application/json' --data '{"text":"Pipeline succeeded!"}' https://hooks.slack.com/services/your/slack/webhook
+  only:
+    - main
+```
+
+### 8. **优化与扩展**
+- **并行执行**：可以通过`parallel`关键字并行运行多个作业，加快Pipeline执行速度。
+- **缓存依赖**：使用`cache`关键字缓存Maven依赖，减少构建时间：
+```yaml
+cache:
+  paths:
+    - .m2/repository/
+```
+- **动态环境**：使用动态环境名称，支持多分支部署。
+
+### 9. **总结**
+通过GitLab CI/CD Pipeline，可以实现从代码提交到测试、部署的完全自动化。根据项目需求，可以灵活调整Pipeline的阶段和作业，确保代码质量和交付效率。

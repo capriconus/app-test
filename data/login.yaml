@@ -1,0 +1,10 @@
+LoginCase:
+  - username: admin
+    password: admin
+    respmsg:  登录成功
+  - username: ''
+    password: admin
+    respmsg:  登录失败
+  - username:
+    password: admin
+    respmsg: 登录失败
